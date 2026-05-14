@@ -1,0 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+body {
+  background-color: #fafaf9;
+  color: #2f2f2f;
+  font-family: 'Inter', sans-serif;
+}
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Montserrat', sans-serif;
+}
+
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px; 
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f1e8; 
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2f2f2f; 
+  border-radius: 10px; 
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2f2f2f; 
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2f2f2f #f5f1e8;
+}
+
+.custom-pagination .swiper-pagination-bullet {
+  background: #6d3c00; /* inactive bullet color */
+  opacity: 1;
+}
+
+.custom-pagination .swiper-pagination-bullet-active {
+  background: #2d2a26; /* active bullet color */
+  width: 12px;
+  height: 12px;
+}
