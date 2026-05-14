@@ -68,7 +68,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-20 mt-10">
+    <div className="min-h-screen flex items-center justify-center px-4 ">
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -188,24 +188,7 @@ export default function Login() {
               )}
             </div>
 
-            <div className="flex items-center justify-between text-sm text-gray-600">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
-                />
-                Se souvenir de moi
-              </label>
-              <button
-                type="button"
-                className="text-black/80 hover:text-black transition"
-                onClick={() => toast.info("Veuillez contacter l'administrateur pour réinitialiser votre mot de passe.")}
-              >
-                Mot de passe oublié ?
-              </button>
-            </div>
+            
 
             {/* Submit */}
             <motion.button

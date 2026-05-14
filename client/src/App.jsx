@@ -2,7 +2,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { jwtDecode } from "jwt-decode";
 
 import Navbar from "./Components/Shared/NavBar";
-import Footer from "./Components/Shared/Footer";
 
 import Login from "./Pages/Login";
 import ProtectedRoute from "./Components/Shared/ProtectedRoute";
@@ -13,6 +12,7 @@ import NotFound from "./Pages/NotFound";
 import ScrollToTop from "./Components/Shared/ScrollToTop";
 import AdminCalendar from "./Components/Admin/AdminCalendar";
 import AdminCases from "./Components/Admin/AdminCases";
+import AdminProfile from "./Components/Admin/AdminProfile";
 
 function App() {
   const token =
@@ -37,12 +37,17 @@ function App() {
     <Router>
       <ScrollToTop />
       <Navbar />
-
-      <Routes>
-        {/* Default Route */}
-        
-
-        {/* Public Route */}
+            
+        <Routes>
+        <Route
+          path="/"
+          element={
+            <Navigate
+              to={isAdmin ? "/admin/dashboard" : "/login"}
+              replace
+            />
+          }
+        />  
         <Route path="/login" element={<Login />} />
 
         {/* Protected Admin Routes */}
@@ -50,13 +55,13 @@ function App() {
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/cases" element={<AdminCases />} />
           <Route path="/admin/calendar" element={<AdminCalendar />} />
+          <Route path="/admin/profile" element={<AdminProfile />} />
         </Route>
 
         {/* 404 */}
         <Route path="*" element={<NotFound />} />
       </Routes>
 
-      <Footer />
     </Router>
   );
 }

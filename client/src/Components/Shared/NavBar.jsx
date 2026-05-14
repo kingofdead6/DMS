@@ -1,217 +1,189 @@
-// src/components/Navbar.jsx
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { motion } from "framer-motion";
-import { ShoppingCartIcon, XMarkIcon, Bars3Icon } from "@heroicons/react/24/outline";
+import { motion, AnimatePresence } from "framer-motion";
+import { XMarkIcon, Bars3Icon } from "@heroicons/react/24/outline";
 import { jwtDecode } from "jwt-decode";
-import Logo from "../../assets/Logo.png"; // Adjust path as needed
+
+const navItems = [
+  { name: "Dashboard",  link: "/admin/dashboard" },
+  { name: "Dossiers",   link: "/admin/cases"     },
+  { name: "Calendrier", link: "/admin/calendar"  },
+  { name: "Profil",     link: "/admin/profile"   },
+];
+
 export default function Navbar() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [userType, setUserType] = useState(null);
-  const [cartCount, setCartCount] = useState(0);
+  const [menuOpen,   setMenuOpen]   = useState(false);
+  const [userName,   setUserName]   = useState("");
+  const [scrolled,   setScrolled]   = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Close mobile menu on route change
+  /* close mobile menu on route change */
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+
+  /* scroll shadow */
   useEffect(() => {
-    setMenuOpen(false);
-  }, [location.pathname]);
-
-  // Check auth status
-  const checkAuth = () => {
-    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-    if (token) {
-      try {
-        const decoded = jwtDecode(token);
-        setUserType(decoded.usertype);
-      } catch {
-        setUserType(null);
-      }
-    } else {
-      setUserType(null);
-    }
-  };
-
-  // Update cart count
-  const updateCartCount = () => {
-    const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-    const total = cart.reduce((sum, item) => sum + (item.quantity || 0), 0);
-    setCartCount(total);
-  };
-
-  useEffect(() => {
-    checkAuth();
-    updateCartCount();
-
-    const handleChange = () => {
-      checkAuth();
-      updateCartCount();
-    };
-
-    window.addEventListener("storage", handleChange);
-    window.addEventListener("authChanged", handleChange);
-    window.addEventListener("cartUpdated", updateCartCount);
-
-    return () => {
-      window.removeEventListener("storage", handleChange);
-      window.removeEventListener("authChanged", handleChange);
-      window.removeEventListener("cartUpdated", updateCartCount);
-    };
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  /* check auth + decode name — re-runs on login/logout */
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+      setIsLoggedIn(!!token);
+      if (!token) { setUserName(""); return; }
+      try {
+        const { name } = jwtDecode(token);
+        if (name) setUserName(name.split(" ")[0]);
+      } catch { /* ignore */ }
+    };
+    checkAuth();
+    window.addEventListener("authChanged", checkAuth);
+    return () => window.removeEventListener("authChanged", checkAuth);
+  }, []);
+
+  /* ← hide everything when not logged in */
+  if (!isLoggedIn) return null;
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     sessionStorage.removeItem("token");
-    setUserType(null);
     window.dispatchEvent(new Event("authChanged"));
     navigate("/login");
   };
 
-  // Navigation for regular users
-  const normalNavItems = [
-    { name: "Accueil", link: "/" },
-    { name: "À propos", link: "/about" },
-    { name: "Produits", link: "/products" },
-    { name: "Contact", link: "/sell-us-something" },
-  ];
-
-  // Admin navigation (kept as is)
-  const adminNavItems = [
-    { name: "Dashboard", link: "/admin/dashboard" },
-    { name: "Commandes", link: "/admin/orders" },
-    { name: "Produits", link: "/admin/products" },
-  ];
-
-  const superadminNavItems = [
-    { name: "Dashboard", link: "/admin/dashboard" },
-    { name: "Commandes", link: "/admin/orders" },
-    { name: "Produits", link: "/admin/products" },
-    { name: "Catégories", link: "/admin/categories" },
-    { name: "Livraison", link: "/admin/delivery-areas" },
-    { name: "Utilisateurs", link: "/admin/users" },
-  ];
-
-  const navItems =
-    userType === "superadmin"
-      ? superadminNavItems
-      : userType === "admin"
-      ? adminNavItems
-      : normalNavItems;
-
-  const isAdmin = userType === "admin" || userType === "superadmin";
+  const active = (link) => location.pathname === link;
 
   return (
     <>
-      <nav className="fixed top-0 left-0 w-full z-50">
-        <div
-          className={`max-w-7xl mx-auto px-6 py-5 flex items-center justify-between backdrop-blur-xl transition-all duration-300 shadow-lg rounded-b-3xl ${
-            isAdmin
-              ? "bg-[#ffffff]/95 text-stone-800 border-b border-stone-300"
-              : "bg-white text-stone-800 border-b border-stone-100"
-          }`}
-        >
-          {/* Logo */}
-          <motion.div
-            initial={{ opacity: 0, x: -30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <Link to="/">
-              <img
-                src={Logo}   // Make sure path is correct
-                alt="Logo"
-                className="h-12 w-auto"
-              />
+      <nav
+        style={{ fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif" }}
+        className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${
+          scrolled ? "shadow-[0_2px_24px_rgba(0,0,0,0.08)]" : ""
+        }`}
+      >
+        <div className="w-full h-[3px] bg-gradient-to-r from-slate-800 via-slate-500 to-slate-300" />
+
+        <div className="w-full bg-white/97 backdrop-blur-md border-b border-slate-100">
+          <div className="w-full px-6 lg:px-10 flex items-center justify-between h-[62px]">
+
+            <Link to="/admin/dashboard" className="flex items-center gap-2.5 group shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center group-hover:bg-slate-700 transition-colors">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="1" y="1" width="6" height="6" rx="1.5" fill="white" />
+                  <rect x="9" y="1" width="6" height="6" rx="1.5" fill="white" fillOpacity=".5" />
+                  <rect x="1" y="9" width="6" height="6" rx="1.5" fill="white" fillOpacity=".5" />
+                  <rect x="9" y="9" width="6" height="6" rx="1.5" fill="white" />
+                </svg>
+              </div>
+              <span className="text-slate-900 font-semibold text-[15px] tracking-tight">DMS</span>
             </Link>
-          </motion.div>
 
-          {/* Desktop Menu */}
-          <ul className="hidden md:flex items-center gap-10 font-medium text-lg">
-            {navItems.map((item, i) => {
-              const isActive = location.pathname === item.link;
-              return (
-                <motion.li
-                  key={i}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
+            <ul className="hidden md:flex items-center gap-1 flex-1 justify-center">
+              {navItems.map((item) => (
+                <li key={item.link}>
                   <Link
                     to={item.link}
-                    className={`pb-1 transition-all duration-200 ${
-                      isActive
-                        ? "text-blue-700 border-b-2 border-blue-700 font-semibold"
-                        : "hover:text-blue-700"
+                    className={`relative px-4 py-2 text-[13.5px] font-medium rounded-lg transition-all duration-150 ${
+                      active(item.link)
+                        ? "text-slate-900 bg-slate-100"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
                     }`}
                   >
                     {item.name}
-                  </Link>
-                </motion.li>
-              );
-            })}
-          </ul>
-
-          {/* Right Side */}
-          <div className="flex items-center gap-6">
-            {/* Cart Icon - Only for customers */}
-           {/* {!isAdmin && (
-              <Link to="/cart" className="relative group">
-                <ShoppingCartIcon className="w-8 h-8 text-stone-700 group-hover:text-blue-700 transition" />
-                {cartCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 bg-blue-700 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow">
-                    {cartCount}
-                  </span>
-                )}
-              </Link>
-            )} */}
-            
-
-            {isAdmin && (
-              <button
-                onClick={handleLogout}
-                className="cursor-pointer px-5 py-2 text-sm font-medium hover:text-blue-700 transition"
-              >
-                Déconnexion
-              </button>
-            )}
-
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="md:hidden text-3xl text-stone-700"
-            >
-              {menuOpen ? <XMarkIcon className="w-8 h-8" /> : <Bars3Icon className="w-8 h-8" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Menu */}
-        {menuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="md:hidden bg-white border-t shadow-xl px-6 py-8"
-          >
-            <ul className="space-y-6 text-xl font-medium">
-              {navItems.map((item, i) => (
-                <li key={i}>
-                  <Link
-                    to={item.link}
-                    onClick={() => setMenuOpen(false)}
-                    className={`block py-2 ${
-                      location.pathname === item.link ? "text-blue-700 font-semibold" : "text-stone-700"
-                    }`}
-                  >
-                    {item.name}
+                    {active(item.link) && (
+                      <motion.span
+                        layoutId="nav-pill"
+                        className="absolute inset-0 rounded-lg bg-slate-100 -z-10"
+                        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                      />
+                    )}
                   </Link>
                 </li>
               ))}
             </ul>
-          </motion.div>
-        )}
+
+            <div className="hidden md:flex items-center gap-3 shrink-0">
+              {userName && (
+                <div className="flex items-center gap-2 pl-2">
+                  <div className="w-7 h-7 rounded-full bg-slate-900 text-white text-[11px] font-semibold flex items-center justify-center uppercase">
+                    {userName[0]}
+                  </div>
+                  <span className="text-[13px] text-slate-600 font-medium">{userName}</span>
+                </div>
+              )}
+              <div className="w-px h-4 bg-slate-200" />
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-[13px] font-medium text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-150"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                Déconnexion
+              </button>
+            </div>
+
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition"
+            >
+              {menuOpen ? <XMarkIcon className="w-5 h-5" /> : <Bars3Icon className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {menuOpen && (
+            <motion.div
+              key="mobile-menu"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+              className="md:hidden bg-white border-b border-slate-100 shadow-lg"
+            >
+              <ul className="px-4 py-3 space-y-0.5">
+                {navItems.map((item) => (
+                  <li key={item.link}>
+                    <Link
+                      to={item.link}
+                      onClick={() => setMenuOpen(false)}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors ${
+                        active(item.link)
+                          ? "text-slate-900 bg-slate-100"
+                          : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                      }`}
+                    >
+                      {item.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              <div className="px-4 pb-4 pt-1 border-t border-slate-100 mt-1">
+                <button
+                  onClick={handleLogout}
+                  className="cursor-pointer w-full flex items-center justify-center gap-2 py-2.5 text-[13.5px] font-medium text-red-500 hover:bg-red-50 rounded-lg transition"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                  </svg>
+                  Déconnexion
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </nav>
 
-      {/* Spacer to prevent content overlap */}
-      <div className="h-20"></div>
+      <div className="h-[65px]" />
     </>
   );
 }

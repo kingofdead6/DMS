@@ -50,7 +50,8 @@ export default function AdminDashboard() {
 
   const adminSections = [
    { path: "/admin/cases", title: "Gestion des Dossiers", description: "Créer et gérer les dossiers juridiques." },
-   { path: "/admin/calendar", title: "Gestion du Calendrier", description: "Ajouter et suivre les événements importants." }
+   { path: "/admin/calendar", title: "Gestion du Calendrier", description: "Ajouter et suivre les événements importants." },
+   { path: "/admin/profile", title: "Profil Administrateur", description: "Gérer les informations de votre profil." }
    
   ];
 
@@ -84,7 +85,7 @@ export default function AdminDashboard() {
               transition={{ duration: 0.9, ease: "easeOut" }}
               className="text-6xl font-extralight tracking-widest text-gray-900"
             >
-              {userType === "superadmin" ? "Bienvenue Super Administrateur" : "Bienvenue Administrateur"}
+              {userType === "superadmin" ? "Bienvenue Super Administrateur" : "Bienvenue "}
             </motion.h1>    
           </div>
 
