@@ -16,6 +16,7 @@ import AdminProfile from "./Components/Admin/AdminProfile";
 import AdminUsers from "./Components/Admin/AdminUsers";
 import AdminLogs from "./Components/Admin/AdminLogs";
 import {SuperadminRoute }from "./Components/Shared/ProtectedRoute";
+import Footer from "./Components/Shared/Footer";
 
 function App() {
   const token =
@@ -69,8 +70,9 @@ if (decoded.usertype === "admin" || decoded.usertype === "superadmin") {
 
         {/* 404 */}
         <Route path="*" element={<NotFound />} />
-      </Routes>
 
+      </Routes>
+          <Footer />
     </Router>
   );
 }
