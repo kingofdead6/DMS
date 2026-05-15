@@ -71,6 +71,14 @@ export const updateCase = asyncHandler(async (req, res) => {
     'caseName', 'caseType', 'status', 'startDate', 'endDate', 'nextHearing', 'notes'];
   fields.forEach((f) => { if (req.body[f] !== undefined) c[f] = req.body[f]; });
 
+  // ── NEW: remove documents the client deleted ──
+  if (req.body.removedDocIds) {
+    const removed = JSON.parse(req.body.removedDocIds); // array of _id strings
+    c.documents = c.documents.filter(
+      (d) => !removed.includes(d._id.toString())
+    );
+  }
+
   if (req.files && req.files.length > 0) {
     for (const file of req.files) {
       const url = await uploadToCloudinary(file);

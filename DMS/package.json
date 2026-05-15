@@ -1,0 +1,49 @@
+{
+  "name": "DMS",
+  "version": "1.0.0",
+  "main": "main.js",
+  "description": "",
+  "author": "",
+  "license": "ISC",
+  "keywords": [],
+
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "dist": "electron-builder --publish=never"
+  },
+
+  "devDependencies": {
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1"
+  },
+
+  "build": {
+    "appId": "com.dms.desktop",
+    "productName": "DMS",
+    "directories": {
+      "output": "dist"
+    },
+
+    "files": [
+      "**/*"
+    ],
+
+    "asar": true,
+
+    "win": {
+      "icon": "assets/icon.png",
+      "target": ["nsis"]
+    },
+
+    "mac": {
+      "icon": "assets/icon.png",
+      "target": ["dmg"]
+    },
+
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": ["AppImage"]
+    }
+  }
+}

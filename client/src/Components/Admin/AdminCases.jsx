@@ -5,38 +5,39 @@ import axios from "axios";
 import { API_BASE_URL } from "../../../api";
 import { toast } from "react-toastify";
 import {
-  Plus, Search, X, Edit, Trash2, FileText, Phone,
+  Plus, Search, X, Edit, Trash2, Phone,
   User, Calendar, Clock, ChevronDown, Paperclip, Eye,
-  Download, FolderOpen, Scale
+  Download, FolderOpen, Scale, FileText,
 } from "lucide-react";
 
 const STATUS_CONFIG = {
-  en_cours:  { label: "En cours",  color: "bg-blue-50 text-blue-700 border-blue-200" },
-  suspendu:  { label: "Suspendu",  color: "bg-amber-50 text-amber-700 border-amber-200" },
-  clôturé:   { label: "Clôturé",   color: "bg-gray-100 text-gray-600 border-gray-200" },
-  gagné:     { label: "Gagné",     color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  perdu:     { label: "Perdu",     color: "bg-red-50 text-red-700 border-red-200" },
+  en_cours: { label: "En cours",  color: "bg-blue-50 text-blue-700 border-blue-200" },
+  suspendu: { label: "Suspendu",  color: "bg-amber-50 text-amber-700 border-amber-200" },
+  clôturé:  { label: "Clôturé",   color: "bg-gray-100 text-gray-600 border-gray-200" },
+  gagné:    { label: "Gagné",     color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  perdu:    { label: "Perdu",     color: "bg-red-50 text-red-700 border-red-200" },
 };
 
 const CASE_TYPES = ["Civil", "Pénal", "Commercial", "Administratif", "Familial", "Travail", "Autre"];
 
 const EMPTY_FORM = {
   clientFullName: "", clientPhone: "", clientDescription: "",
-  caseName: "", caseType: "", status: "en_cours",
+  caseName: "", caseDescription: "", caseType: "", status: "en_cours",
   startDate: "", endDate: "", nextHearing: "", notes: "",
-  documents: [],
+  documents: [],       // { url, name, existing, _id?, file? }
+  removedDocIds: [],   // _ids of existing docs to delete on save
 };
 
 export default function AdminCases() {
-  const [cases, setCases] = useState([]);
-  const [filtered, setFiltered] = useState([]);
+  const [cases, setCases]           = useState([]);
+  const [filtered, setFiltered]     = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [showDetail, setShowDetail] = useState(null); // case object for detail view
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [loading, setLoading]       = useState(false);
+  const [showModal, setShowModal]   = useState(false);
+  const [showDetail, setShowDetail] = useState(null);
+  const [editingId, setEditingId]   = useState(null);
+  const [form, setForm]             = useState(EMPTY_FORM);
 
   useEffect(() => { fetchCases(); }, []);
 
@@ -65,14 +66,28 @@ export default function AdminCases() {
     }
   };
 
+  // ── SUBMIT (create or update) ──────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+
     const fd = new FormData();
-    const fields = ["clientFullName","clientPhone","clientDescription","caseName",
-      "caseType","status","startDate","endDate","nextHearing","notes"];
-    fields.forEach((f) => { if (form[f]) fd.append(f, form[f]); });
-    form.documents.filter((d) => d.file).forEach((d) => fd.append("documents", d.file));
+    const textFields = [
+      "clientFullName", "clientPhone", "clientDescription",
+      "caseName", "caseDescription", "caseType", "status",
+      "startDate", "endDate", "nextHearing", "notes",
+    ];
+    textFields.forEach((f) => { if (form[f]) fd.append(f, form[f]); });
+
+    // Tell the backend which existing docs to remove
+    if (form.removedDocIds.length > 0) {
+      fd.append("removedDocIds", JSON.stringify(form.removedDocIds));
+    }
+
+    // Only attach truly new files
+    form.documents
+      .filter((d) => d.file)
+      .forEach((d) => fd.append("documents", d.file));
 
     try {
       if (editingId) {
@@ -97,38 +112,63 @@ export default function AdminCases() {
     setShowModal(false);
   };
 
+  // ── OPEN EDIT MODAL ────────────────────────────────────────────────────────
   const handleEdit = (c) => {
     setEditingId(c._id);
     setForm({
-      clientFullName: c.clientFullName,
-      clientPhone: c.clientPhone,
+      clientFullName:    c.clientFullName,
+      clientPhone:       c.clientPhone,
       clientDescription: c.clientDescription || "",
-      caseName: c.caseName,
-      caseType: c.caseType || "",
-      status: c.status,
-      startDate: c.startDate ? c.startDate.slice(0, 10) : "",
-      endDate: c.endDate ? c.endDate.slice(0, 10) : "",
-      nextHearing: c.nextHearing ? c.nextHearing.slice(0, 10) : "",
-      notes: c.notes || "",
-      documents: c.documents.map((d) => ({ url: d.url, name: d.originalName, existing: true })),
+      caseName:          c.caseName,
+      caseDescription:   c.caseDescription   || "",
+      caseType:          c.caseType          || "",
+      status:            c.status,
+      startDate:         c.startDate    ? c.startDate.slice(0, 10)    : "",
+      endDate:           c.endDate      ? c.endDate.slice(0, 10)      : "",
+      nextHearing:       c.nextHearing  ? c.nextHearing.slice(0, 10)  : "",
+      notes:             c.notes        || "",
+      // existing docs carry their Mongo _id so we can delete them selectively
+      documents: c.documents.map((d) => ({
+        url:      d.url,
+        name:     d.originalName,
+        _id:      d._id,
+        existing: true,
+      })),
+      removedDocIds: [],
     });
     setShowModal(true);
   };
 
+  // ── FILE HELPERS ───────────────────────────────────────────────────────────
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
     const newDocs = files.map((file) => ({
       file,
       name: file.name,
-      preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+      existing: false,
     }));
-    setForm((prev) => ({ ...prev, documents: [...prev.documents, ...newDocs].slice(0, 20) }));
+    setForm((prev) => ({
+      ...prev,
+      documents: [...prev.documents, ...newDocs].slice(0, 20),
+    }));
+    // reset input so the same file can be re-added after removal
+    e.target.value = "";
   };
 
+  // Removing a doc: if it was already saved on the server, queue its _id for deletion
   const removeDoc = (idx) => {
-    setForm((prev) => ({ ...prev, documents: prev.documents.filter((_, i) => i !== idx) }));
+    const doc = form.documents[idx];
+    setForm((prev) => {
+      const updatedDocs = prev.documents.filter((_, i) => i !== idx);
+      const updatedRemoved =
+        doc.existing && doc._id
+          ? [...prev.removedDocIds, doc._id]
+          : prev.removedDocIds;
+      return { ...prev, documents: updatedDocs, removedDocIds: updatedRemoved };
+    });
   };
 
+  // ── DELETE WHOLE CASE ──────────────────────────────────────────────────────
   const handleDelete = async (id) => {
     if (!confirm("Supprimer ce dossier définitivement ?")) return;
     try {
@@ -140,31 +180,44 @@ export default function AdminCases() {
     }
   };
 
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString("fr-FR") : "—";
+  // ── UTILS ──────────────────────────────────────────────────────────────────
+  const formatDate = (d) => (d ? new Date(d).toLocaleDateString("fr-FR") : "—");
 
   const getFileIcon = (name = "") => {
     const ext = name.split(".").pop().toLowerCase();
-    if (["jpg","jpeg","png","gif","webp"].includes(ext)) return "🖼️";
+    if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) return "🖼️";
     if (ext === "pdf") return "📄";
-    if (["doc","docx"].includes(ext)) return "📝";
+    if (["doc", "docx"].includes(ext)) return "📝";
     return "📎";
   };
 
+  const accentColor = (status) =>
+    status === "gagné"    ? "bg-emerald-400"
+    : status === "perdu"  ? "bg-red-400"
+    : status === "suspendu" ? "bg-amber-400"
+    : status === "clôturé"  ? "bg-gray-300"
+    : "bg-blue-400";
+
+  // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50/50 pb-24" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
-      {/* Header */}
+
+      {/* ── Top bar ── */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Scale size={22} className="text-gray-700" />
             <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Dossiers Clients</h1>
           </div>
-          <span className="text-sm text-gray-400">{filtered.length} dossier{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm text-gray-400">
+            {filtered.length} dossier{filtered.length !== 1 ? "s" : ""}
+          </span>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-8">
-        {/* Controls */}
+
+        {/* ── Controls ── */}
         <div className="flex flex-col sm:flex-row gap-3 mb-8">
           <button
             onClick={() => setShowModal(true)}
@@ -199,7 +252,7 @@ export default function AdminCases() {
           </div>
         </div>
 
-        {/* Cases Grid */}
+        {/* ── Cases grid ── */}
         {loading && cases.length === 0 ? (
           <div className="flex justify-center py-24 text-gray-400">Chargement…</div>
         ) : filtered.length === 0 ? (
@@ -215,13 +268,10 @@ export default function AdminCases() {
                 layout
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden group"
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden"
               >
-                {/* Card top accent */}
-                <div className={`h-1 w-full ${c.status === "gagné" ? "bg-emerald-400" : c.status === "perdu" ? "bg-red-400" : c.status === "suspendu" ? "bg-amber-400" : c.status === "clôturé" ? "bg-gray-300" : "bg-blue-400"}`} />
-
+                <div className={`h-1 w-full ${accentColor(c.status)}`} />
                 <div className="p-5">
-                  {/* Status */}
                   <div className="flex items-start justify-between mb-3">
                     <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${STATUS_CONFIG[c.status]?.color}`}>
                       {STATUS_CONFIG[c.status]?.label}
@@ -233,15 +283,16 @@ export default function AdminCases() {
                     )}
                   </div>
 
-                  {/* Case name */}
                   <h3 className="font-semibold text-gray-900 text-base leading-tight mb-1 line-clamp-2">
                     {c.caseName}
                   </h3>
-                  {c.caseType && (
-                    <p className="text-xs text-gray-400 mb-3">{c.caseType}</p>
+                  {c.caseType && <p className="text-xs text-gray-400 mb-1">{c.caseType}</p>}
+
+                  {/* ── NEW: case description preview ── */}
+                  {c.caseDescription && (
+                    <p className="text-xs text-gray-500 mb-3 line-clamp-2 italic">{c.caseDescription}</p>
                   )}
 
-                  {/* Client */}
                   <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                     <User size={13} className="text-gray-400 shrink-0" />
                     <span className="truncate">{c.clientFullName}</span>
@@ -251,14 +302,12 @@ export default function AdminCases() {
                     <span>{c.clientPhone}</span>
                   </div>
 
-                  {/* Dates */}
                   {c.nextHearing && (
                     <div className="flex items-center gap-2 text-xs text-gray-500 bg-amber-50 px-3 py-1.5 rounded-lg mb-3">
                       <Calendar size={12} className="text-amber-500" />
                       <span>Audience : {formatDate(c.nextHearing)}</span>
                     </div>
                   )}
-
                   {c.startDate && (
                     <div className="flex items-center gap-2 text-xs text-gray-400 mb-4">
                       <Clock size={12} />
@@ -266,7 +315,6 @@ export default function AdminCases() {
                     </div>
                   )}
 
-                  {/* Actions */}
                   <div className="flex gap-2 pt-2 border-t border-gray-50">
                     <button
                       onClick={() => setShowDetail(c)}
@@ -294,7 +342,9 @@ export default function AdminCases() {
         )}
       </div>
 
-      {/* ── ADD / EDIT MODAL ── */}
+      {/* ══════════════════════════════════════════════════════════════════
+          ADD / EDIT MODAL
+      ══════════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {showModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -305,7 +355,6 @@ export default function AdminCases() {
               transition={{ type: "spring", damping: 25 }}
               className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl flex flex-col max-h-[92vh] shadow-2xl"
             >
-              {/* Modal header */}
               <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
                 <h2 className="text-lg font-semibold text-gray-900">
                   {editingId ? "Modifier le dossier" : "Nouveau dossier client"}
@@ -315,12 +364,11 @@ export default function AdminCases() {
                 </button>
               </div>
 
-              {/* Scrollable body */}
               <div className="overflow-y-auto px-6 py-6 flex-1">
                 <form onSubmit={handleSubmit} className="space-y-5" id="case-form">
 
-                  {/* Section: Client */}
-                  <div>
+                  {/* Client */}
+                  <section>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
                       Informations client
                     </p>
@@ -357,10 +405,10 @@ export default function AdminCases() {
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:border-gray-400 focus:outline-none resize-none h-20"
                       />
                     </div>
-                  </div>
+                  </section>
 
-                  {/* Section: Dossier */}
-                  <div>
+                  {/* Dossier */}
+                  <section>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
                       Informations du dossier
                     </p>
@@ -376,6 +424,18 @@ export default function AdminCases() {
                           required
                         />
                       </div>
+
+                      {/* ── NEW: case description ── */}
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-gray-500 mb-1.5">Description du dossier (optionnel)</label>
+                        <textarea
+                          placeholder="Résumé de l'affaire, faits importants…"
+                          value={form.caseDescription}
+                          onChange={(e) => setForm({ ...form, caseDescription: e.target.value })}
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:border-gray-400 focus:outline-none resize-none h-24"
+                        />
+                      </div>
+
                       <div>
                         <label className="block text-xs text-gray-500 mb-1.5">Type</label>
                         <div className="relative">
@@ -416,17 +476,17 @@ export default function AdminCases() {
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:border-gray-400 focus:outline-none resize-none h-24"
                       />
                     </div>
-                  </div>
+                  </section>
 
-                  {/* Section: Dates */}
-                  <div>
+                  {/* Dates */}
+                  <section>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
                       Dates (optionnel)
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {[
-                        { key: "startDate", label: "Date d'ouverture" },
-                        { key: "endDate", label: "Date de clôture" },
+                        { key: "startDate",   label: "Date d'ouverture" },
+                        { key: "endDate",     label: "Date de clôture" },
                         { key: "nextHearing", label: "Prochaine audience" },
                       ].map(({ key, label }) => (
                         <div key={key}>
@@ -440,10 +500,10 @@ export default function AdminCases() {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </section>
 
-                  {/* Section: Documents */}
-                  <div>
+                  {/* Documents */}
+                  <section>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
                       Documents (max 20)
                     </p>
@@ -458,27 +518,35 @@ export default function AdminCases() {
                         {form.documents.map((doc, i) => (
                           <div key={i} className="flex items-center gap-3 bg-gray-50 px-3 py-2.5 rounded-xl">
                             <span className="text-base">{getFileIcon(doc.name)}</span>
-                            <span className="flex-1 text-xs text-gray-700 truncate">{doc.name || "Fichier existant"}</span>
-                            {doc.existing && (
-                              <a href={doc.url} target="_blank" rel="noopener noreferrer"
-                                className="text-xs text-blue-500 hover:underline">
+                            <span className="flex-1 text-xs text-gray-700 truncate">
+                              {doc.name || "Fichier existant"}
+                            </span>
+                            {doc.existing && doc.url && (
+                              <a
+                                href={doc.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-600"
+                              >
                                 <Download size={13} />
                               </a>
                             )}
-                            <button type="button" onClick={() => removeDoc(i)}
-                              className="text-gray-300 hover:text-red-500 transition-colors">
+                            <button
+                              type="button"
+                              onClick={() => removeDoc(i)}
+                              className="text-gray-300 hover:text-red-500 transition-colors"
+                            >
                               <X size={15} />
                             </button>
                           </div>
                         ))}
                       </div>
                     )}
-                  </div>
+                  </section>
 
                 </form>
               </div>
 
-              {/* Footer */}
               <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
                 <button
                   type="submit"
@@ -501,7 +569,9 @@ export default function AdminCases() {
         )}
       </AnimatePresence>
 
-      {/* ── DETAIL MODAL ── */}
+      {/* ══════════════════════════════════════════════════════════════════
+          DETAIL MODAL
+      ══════════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {showDetail && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -511,12 +581,17 @@ export default function AdminCases() {
               exit={{ y: 60, opacity: 0 }}
               className="bg-white w-full sm:max-w-xl sm:rounded-2xl rounded-t-2xl max-h-[90vh] flex flex-col shadow-2xl"
             >
-              <div className={`h-1.5 w-full rounded-t-2xl ${showDetail.status === "gagné" ? "bg-emerald-400" : showDetail.status === "perdu" ? "bg-red-400" : showDetail.status === "suspendu" ? "bg-amber-400" : "bg-blue-400"}`} />
+              <div className={`h-1.5 w-full rounded-t-2xl ${accentColor(showDetail.status)}`} />
+
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <h2 className="text-lg font-semibold text-gray-900 truncate">{showDetail.caseName}</h2>
-                <button onClick={() => setShowDetail(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+                <button onClick={() => setShowDetail(null)} className="text-gray-400 hover:text-gray-600">
+                  <X size={20} />
+                </button>
               </div>
+
               <div className="overflow-y-auto px-6 py-5 space-y-5">
+                {/* Status + type */}
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${STATUS_CONFIG[showDetail.status]?.color}`}>
                     {STATUS_CONFIG[showDetail.status]?.label}
@@ -524,6 +599,19 @@ export default function AdminCases() {
                   {showDetail.caseType && <span className="text-xs text-gray-400">{showDetail.caseType}</span>}
                 </div>
 
+                {/* ── NEW: case description in detail ── */}
+                {showDetail.caseDescription && (
+                  <div>
+                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                      <FileText size={11} /> Description du dossier
+                    </p>
+                    <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-xl leading-relaxed">
+                      {showDetail.caseDescription}
+                    </p>
+                  </div>
+                )}
+
+                {/* Client grid */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <p className="text-xs text-gray-400 mb-0.5">Client</p>
@@ -571,8 +659,13 @@ export default function AdminCases() {
                     <p className="text-xs text-gray-400 mb-2">Documents ({showDetail.documents.length})</p>
                     <div className="space-y-2">
                       {showDetail.documents.map((doc, i) => (
-                        <a key={i} href={doc.url} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-3 bg-gray-50 hover:bg-gray-100 px-3 py-2.5 rounded-xl transition-colors">
+                        <a
+                          key={i}
+                          href={doc.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 bg-gray-50 hover:bg-gray-100 px-3 py-2.5 rounded-xl transition-colors"
+                        >
                           <span>{getFileIcon(doc.originalName)}</span>
                           <span className="flex-1 text-xs text-gray-700 truncate">{doc.originalName || "Document"}</span>
                           <Download size={13} className="text-gray-400" />
@@ -582,6 +675,7 @@ export default function AdminCases() {
                   </div>
                 )}
               </div>
+
               <div className="px-6 py-4 border-t border-gray-100">
                 <button
                   onClick={() => { setShowDetail(null); handleEdit(showDetail); }}
