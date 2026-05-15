@@ -1,8 +1,8 @@
 import asyncHandler from 'express-async-handler';
 import Case from '../Models/Case.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { logAction } from '../Middleware/logger.js';
 
-// GET /cases  — list all, optional search & status filter
 export const getCases = asyncHandler(async (req, res) => {
   const { search, status } = req.query;
   const query = {};
@@ -18,68 +18,64 @@ export const getCases = asyncHandler(async (req, res) => {
   res.json(cases);
 });
 
-// GET /cases/:id
 export const getCaseById = asyncHandler(async (req, res) => {
   const c = await Case.findById(req.params.id).lean();
   if (!c) { res.status(404); throw new Error('Dossier introuvable'); }
   res.json(c);
 });
 
-// POST /cases
 export const createCase = asyncHandler(async (req, res) => {
-  const { clientFullName, clientPhone, clientDescription, caseName, caseType,
-    status, startDate, endDate, nextHearing, notes } = req.body;
+  const { clientFullName, clientPhone, clientDescription, caseName,
+    caseDescription, caseType, status, startDate, endDate, nextHearing, notes } = req.body;
 
   if (!clientFullName || !clientPhone || !caseName) {
-    res.status(400);
-    throw new Error('Nom, téléphone et nom du dossier sont requis');
+    res.status(400); throw new Error('Nom, téléphone et nom du dossier sont requis');
   }
 
   const documents = [];
-  if (req.files && req.files.length > 0) {
+  if (req.files?.length > 0) {
     for (const file of req.files) {
       const url = await uploadToCloudinary(file);
-      documents.push({
-        url,
-        originalName: file.originalname,
-        fileType: file.mimetype,
-      });
+      documents.push({ url, originalName: file.originalname, fileType: file.mimetype });
     }
   }
 
   const newCase = await Case.create({
     clientFullName, clientPhone,
     clientDescription: clientDescription || '',
-    caseName, caseType: caseType || '',
+    caseName, caseDescription: caseDescription || '',
+    caseType: caseType || '',
     status: status || 'en_cours',
-    startDate: startDate || null,
-    endDate: endDate || null,
+    startDate: startDate || null, endDate: endDate || null,
     nextHearing: nextHearing || null,
-    notes: notes || '',
-    documents,
+    notes: notes || '', documents,
   });
 
+  await logAction(req, 'CREATE', 'CASE', newCase._id, newCase.caseName, {
+    client: clientFullName, status: newCase.status,
+  });
   res.status(201).json(newCase);
 });
 
-// PUT /cases/:id
 export const updateCase = asyncHandler(async (req, res) => {
   const c = await Case.findById(req.params.id);
   if (!c) { res.status(404); throw new Error('Dossier introuvable'); }
 
   const fields = ['clientFullName', 'clientPhone', 'clientDescription',
-    'caseName', 'caseType', 'status', 'startDate', 'endDate', 'nextHearing', 'notes'];
-  fields.forEach((f) => { if (req.body[f] !== undefined) c[f] = req.body[f]; });
+    'caseName', 'caseDescription', 'caseType', 'status',
+    'startDate', 'endDate', 'nextHearing', 'notes'];
+  const before = {};
+  fields.forEach((f) => {
+    before[f] = c[f];
+    if (req.body[f] !== undefined) c[f] = req.body[f];
+  });
 
-  // ── NEW: remove documents the client deleted ──
   if (req.body.removedDocIds) {
-    const removed = JSON.parse(req.body.removedDocIds); // array of _id strings
-    c.documents = c.documents.filter(
-      (d) => !removed.includes(d._id.toString())
-    );
+    const removed = JSON.parse(req.body.removedDocIds);
+    c.documents = c.documents.filter((d) => !removed.includes(d._id.toString()));
   }
 
-  if (req.files && req.files.length > 0) {
+  if (req.files?.length > 0) {
     for (const file of req.files) {
       const url = await uploadToCloudinary(file);
       c.documents.push({ url, originalName: file.originalname, fileType: file.mimetype });
@@ -87,19 +83,26 @@ export const updateCase = asyncHandler(async (req, res) => {
   }
 
   const updated = await c.save();
+  await logAction(req, 'UPDATE', 'CASE', c._id, c.caseName, { changes: req.body });
   res.json(updated);
 });
 
-// DELETE /cases/:id
 export const deleteCase = asyncHandler(async (req, res) => {
+  // Block admin from deleting
+  if (req.user?.usertype === 'admin') {
+    res.status(403); throw new Error('Admins cannot delete cases');
+  }
   const c = await Case.findById(req.params.id);
   if (!c) { res.status(404); throw new Error('Dossier introuvable'); }
+  await logAction(req, 'DELETE', 'CASE', c._id, c.caseName, { client: c.clientFullName });
   await Case.deleteOne({ _id: req.params.id });
   res.json({ message: 'Dossier supprimé' });
 });
 
-// DELETE /cases/:id/documents/:docId  — remove a single document
 export const deleteDocument = asyncHandler(async (req, res) => {
+  if (req.user?.usertype === 'admin') {
+    res.status(403); throw new Error('Admins cannot delete documents');
+  }
   const c = await Case.findById(req.params.id);
   if (!c) { res.status(404); throw new Error('Dossier introuvable'); }
   c.documents = c.documents.filter((d) => d._id.toString() !== req.params.docId);

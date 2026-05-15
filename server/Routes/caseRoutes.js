@@ -1,41 +1,36 @@
+// routes/case.js
 import express from 'express';
 import multer from 'multer';
+import { protect } from '../Middleware/auth.js';
 import {
-  getCases,
-  getCaseById,
-  createCase,
-  updateCase,
-  deleteCase,
-  deleteDocument,
+  getCases, getCaseById, createCase,
+  updateCase, deleteCase, deleteDocument,
 } from '../Controllers/case.js';
 
 const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
-      'application/pdf',
-      'application/msword',                                                  // .doc
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-      'application/vnd.ms-excel',                                            // .xls
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',   // .xlsx
-      'application/vnd.ms-powerpoint',                                       // .ppt
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+  fileFilter: (_, file, cb) => {
+    const allowed = [
+      'image/jpeg','image/png','image/gif','image/webp','image/svg+xml',
+      'application/pdf','application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     ];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Type de fichier non autorisé'), false);
-    }
+    cb(null, allowed.includes(file.mimetype));
   },
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
+
 router.get('/', getCases);
 router.get('/:id', getCaseById);
-router.post('/', upload.array('documents', 20), createCase);
-router.put('/:id', upload.array('documents', 20), updateCase);
-router.delete('/:id', deleteCase);
-router.delete('/:id/documents/:docId', deleteDocument);
+// ✅ protect added so req.user is populated → logAction works
+router.post('/', protect, upload.array('documents', 20), createCase);
+router.put('/:id', protect, upload.array('documents', 20), updateCase);
+router.delete('/:id', protect, deleteCase);
+router.delete('/:id/documents/:docId', protect, deleteDocument);
 
 export default router;

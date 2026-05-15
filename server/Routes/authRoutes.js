@@ -1,15 +1,20 @@
 import express from 'express';
-import { loginUser, registerUser, updatePassword, deleteUser, updateUser, getUsers } from '../Controllers/auth.js';
-import { protect } from '../Middleware/auth.js';
+import {
+  loginUser, registerUser, updatePassword,
+  deleteUser, updateUser, getUsers,
+  getProfile,
+} from '../Controllers/auth.js';
+import { protect, superadminOnly } from '../Middleware/auth.js';
 
 const router = express.Router();
 
 router.post('/login', loginUser);
 router.post('/register', registerUser);
-// routes/auth.js
-router.get('/users', getUsers);
-router.put('/users/:id', protect, updateUser);
-router.delete('/users/:id', protect, deleteUser);
-router.put('/users/:id/password', protect, updatePassword);
+router.get('/users', protect, superadminOnly, getUsers);
+router.put('/users/:id', protect, superadminOnly, updateUser);
+router.delete('/users/:id', protect, superadminOnly, deleteUser);
+router.put('/users/:id/password', protect, superadminOnly, updatePassword);
+// In your auth routes:
+router.get("/profile", protect, getProfile);
 
 export default router;

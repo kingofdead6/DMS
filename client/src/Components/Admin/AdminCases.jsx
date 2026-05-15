@@ -9,7 +9,14 @@ import {
   User, Calendar, Clock, ChevronDown, Paperclip, Eye,
   Download, FolderOpen, Scale, FileText,
 } from "lucide-react";
-
+import { jwtDecode } from "jwt-decode";
+// Add near the top of AdminCases.jsx (after imports)
+function getToken() {
+  return localStorage.getItem("token") || sessionStorage.getItem("token");
+}
+function authHeader() {
+  return { Authorization: `Bearer ${getToken()}` };
+}
 const STATUS_CONFIG = {
   en_cours: { label: "En cours",  color: "bg-blue-50 text-blue-700 border-blue-200" },
   suspendu: { label: "Suspendu",  color: "bg-amber-50 text-amber-700 border-amber-200" },
@@ -38,7 +45,14 @@ export default function AdminCases() {
   const [showDetail, setShowDetail] = useState(null);
   const [editingId, setEditingId]   = useState(null);
   const [form, setForm]             = useState(EMPTY_FORM);
-
+// Add inside AdminCases, after useState declarations:
+const [userType, setUserType] = useState("admin");
+useEffect(() => {
+  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+  if (token) {
+    try { setUserType(jwtDecode(token).usertype); } catch { /* */ }
+  }
+}, []);
   useEffect(() => { fetchCases(); }, []);
 
   useEffect(() => {
@@ -57,7 +71,7 @@ export default function AdminCases() {
   const fetchCases = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_BASE_URL}/cases`);
+      const res = await axios.get(`${API_BASE_URL}/cases`, { headers: authHeader() });
       setCases(res.data);
     } catch {
       toast.error("Erreur lors du chargement des dossiers");
@@ -91,10 +105,10 @@ export default function AdminCases() {
 
     try {
       if (editingId) {
-        await axios.put(`${API_BASE_URL}/cases/${editingId}`, fd);
+        await axios.put(`${API_BASE_URL}/cases/${editingId}`, fd, { headers: authHeader() });
         toast.success("Dossier mis à jour");
       } else {
-        await axios.post(`${API_BASE_URL}/cases`, fd);
+        await axios.post(`${API_BASE_URL}/cases`, fd, { headers: authHeader() });
         toast.success("Dossier créé avec succès");
       }
       resetForm();
@@ -172,7 +186,7 @@ export default function AdminCases() {
   const handleDelete = async (id) => {
     if (!confirm("Supprimer ce dossier définitivement ?")) return;
     try {
-      await axios.delete(`${API_BASE_URL}/cases/${id}`);
+      await axios.delete(`${API_BASE_URL}/cases/${id}`, { headers: authHeader() });
       setCases((prev) => prev.filter((c) => c._id !== id));
       toast.success("Dossier supprimé");
     } catch {
@@ -328,12 +342,14 @@ export default function AdminCases() {
                     >
                       <Edit size={13} className="inline mr-1" /> Modifier
                     </button>
+                    {userType === "superadmin" && (
                     <button
                       onClick={() => handleDelete(c._id)}
                       className="py-2 px-2.5 text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
                     >
                       <Trash2 size={13} />
                     </button>
+                    )}
                   </div>
                 </div>
               </motion.div>

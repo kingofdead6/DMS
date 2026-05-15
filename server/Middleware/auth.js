@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { asyncHandler } from '../utils/asyncHandler.js';
+import asyncHandler from 'express-async-handler';
 import User from '../Models/User.js';
 
 export const protect = asyncHandler(async (req, res, next) => {
@@ -26,7 +26,7 @@ export const admin = (req, res, next) => {
   }
 };
 
-export const superadmin = (req, res, next) => {
+export const superadminOnly = (req, res, next) => {
   if (req.user && req.user.usertype === 'superadmin') {
     next();
   } else {

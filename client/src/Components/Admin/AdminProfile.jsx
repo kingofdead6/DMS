@@ -37,47 +37,32 @@ export default function AdminProfile() {
   const [showConfirm, setShowConfirm]         = useState(false);
   const [pwLoading, setPwLoading]             = useState(false);
 
-  useEffect(() => {
-    // Extract the user id — JWT payload may use "id" or "_id" or "sub"
-    const userId = tokenUser?.id || tokenUser?._id || tokenUser?.sub;
+  // Replace the entire useEffect + user state logic:
 
-    console.log("👤 Resolved userId from token:", userId);
+useEffect(() => {
+  // Build user info directly from the token — works for both admin and superadmin
+  const userId = tokenUser?.id || tokenUser?._id || tokenUser?.sub;
+  if (!userId) { setLoading(false); return; }
 
-    if (!userId) {
-      console.warn("No userId found in token payload");
-      setLoading(false);
-      return;
-    }
-
-    axios
-      .get(`${API_BASE_URL}/auth/users`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      })
-      .then((res) => {
-        const users = Array.isArray(res.data)
-          ? res.data
-          : res.data.users || [];
-
-        console.log(
-          "📋 Users from API:",
-          users.map((u) => ({ _id: u._id, name: u.name }))
-        );
-        console.log("🔍 Looking for userId:", userId);
-
-        // Coerce both sides to string to handle ObjectId vs string mismatch
-        const me = users.find(
-          (u) => String(u._id) === String(userId)
-        );
-
-        console.log("✅ Matched user:", me);
-        setUser(me || null);
-      })
-      .catch((err) => {
-        console.error("API error:", err);
-        toast.error("Impossible de charger le profil");
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  // Fetch own profile via a dedicated endpoint, fallback to token data
+  axios
+    .get(`${API_BASE_URL}/auth/profile`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+    .then((res) => setUser(res.data))
+    .catch(() => {
+      // Graceful fallback: use what's in the token
+      if (tokenUser) {
+        setUser({
+          _id: userId,
+          name: tokenUser.name || "—",
+          email: tokenUser.email || "—",
+          usertype: tokenUser.usertype || "admin",
+        });
+      }
+    })
+    .finally(() => setLoading(false));
+}, []);
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
