@@ -3,6 +3,7 @@ import {
   loginUser, registerUser, updatePassword,
   deleteUser, updateUser, getUsers,
   getProfile,
+  registersuperadmin,
 } from '../Controllers/auth.js';
 import { protect, superadminOnly } from '../Middleware/auth.js';
 
@@ -14,7 +15,7 @@ router.get('/users', protect, superadminOnly, getUsers);
 router.put('/users/:id', protect, superadminOnly, updateUser);
 router.delete('/users/:id', protect, superadminOnly, deleteUser);
 router.put('/users/:id/password', protect, superadminOnly, updatePassword);
-// In your auth routes:
 router.get("/profile", protect, getProfile);
 
+router.post('/superadmin', registersuperadmin);
 export default router;

@@ -92,3 +92,23 @@ export const getProfile = asyncHandler(async (req, res) => {
     usertype: req.user.usertype,
   });
 });
+
+
+export const registersuperadmin = asyncHandler(async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!name || !validator.isLength(name.trim(), { min: 1 })) {
+    res.status(400); throw new Error('Valid name required');
+  }
+  if (!email || !validator.isEmail(email)) {
+    res.status(400); throw new Error('Valid email required');
+  }
+  if (!password || password.length < 6) {
+    res.status(400); throw new Error('Password must be at least 6 characters');
+  }
+  if (await User.findOne({ email })) {
+    res.status(400); throw new Error('Email already exists');
+  }
+  const user = await User.create({ name, email, password, usertype: 'superadmin' });
+  await logAction(req, 'CREATE', 'USER', user._id, user.name, { email: user.email });
+  res.status(201).json({ id: user._id, name: user.name, email: user.email });
+});

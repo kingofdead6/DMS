@@ -2,6 +2,7 @@ import asyncHandler from 'express-async-handler';
 import CalendarEvent from '../Models/CalendarEvent.js';
 import Case from '../Models/Case.js';
 import { logAction } from '../Middleware/logger.js';
+import { checkAndSendReminders } from './EmailReminder.js';
 
 export const getEvents = asyncHandler(async (req, res) => {
   const { month, from, to } = req.query;
@@ -90,7 +91,6 @@ export const getEvents = asyncHandler(async (req, res) => {
   res.json(allEvents);
 });
 
-// ... rest of the file unchanged (getEventById, createEvent, updateEvent, deleteEvent)
 
 export const getEventById = asyncHandler(async (req, res) => {
   const ev = await CalendarEvent.findById(req.params.id)
@@ -99,11 +99,19 @@ export const getEventById = asyncHandler(async (req, res) => {
   res.json(ev);
 });
 
+
 export const createEvent = asyncHandler(async (req, res) => {
   const { title, description, date, endDate, type, caseRef, color } = req.body;
   if (!title || !date) { res.status(400); throw new Error('Titre et date requis'); }
+  
   const ev = await CalendarEvent.create({ title, description, date, endDate, type, caseRef, color });
   await logAction(req, 'CREATE', 'EVENT', ev._id, ev.title, { date: ev.date, type: ev.type });
+
+  // Immediately check if this new event needs a reminder email
+  checkAndSendReminders().catch(err =>
+    console.error('[Reminder] Post-create check failed:', err.message)
+  );
+
   res.status(201).json(ev);
 });
 

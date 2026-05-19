@@ -7,6 +7,7 @@ import { errorHandler } from './Middleware/error.js';
 import caseRoutes from './Routes/caseRoutes.js';
 import eventRoutes from './Routes/calendarEventRoutes.js';
 import logRoutes from './Routes/logsRoutes.js';
+import { startReminderScheduler } from './Controllers/EmailReminder.js';
 
 dotenv.config();
 
@@ -20,6 +21,8 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected'))
   .catch((err) => console.log(err));
+
+startReminderScheduler();
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cases', caseRoutes);

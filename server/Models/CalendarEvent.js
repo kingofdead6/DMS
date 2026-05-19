@@ -14,6 +14,8 @@ const calendarEventSchema = new mongoose.Schema(
     // Optional link to a case
     caseRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Case' },
     color: { type: String, default: '#000000' },
+    reminder48hSent: { type: Boolean, default: false },
+    reminder24hSent: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
