@@ -125,9 +125,10 @@ export const updateEvent = asyncHandler(async (req, res) => {
   res.json(updated);
 });
 
+// deleteEvent — fix the inverted role check
 export const deleteEvent = asyncHandler(async (req, res) => {
-  if (req.user?.usertype === 'admin') {
-    res.status(403); throw new Error('Admins cannot delete events');
+  if (req.user?.usertype !== 'superadmin') {   // ← was === 'admin' (inverted!)
+    res.status(403); throw new Error('Only superadmins can delete events');
   }
   const ev = await CalendarEvent.findById(req.params.id);
   if (!ev) { res.status(404); throw new Error('Événement introuvable'); }
@@ -135,3 +136,4 @@ export const deleteEvent = asyncHandler(async (req, res) => {
   await CalendarEvent.deleteOne({ _id: req.params.id });
   res.json({ message: 'Événement supprimé' });
 });
+

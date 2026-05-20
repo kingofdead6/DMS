@@ -9,6 +9,7 @@ import {
   ChevronLeft, ChevronRight, Plus, X, Edit, Trash2,
   Clock, Link2, FolderOpen, CalendarDays,
 } from "lucide-react";
+import { useMemo } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -57,9 +58,12 @@ function getFirstDayOfMonth(year, month) {
 }
 
 function toYMD(date) {
-  return date.toISOString().slice(0, 10);
+  const d = date instanceof Date ? date : new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
-
 function sameDay(a, b) {
   return toYMD(new Date(a)) === toYMD(new Date(b));
 }
@@ -67,7 +71,8 @@ function sameDay(a, b) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AdminCalendar() {
-  const today = new Date();
+  const today = useMemo(() => new Date(), []);
+
   const [viewYear, setViewYear]   = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [events, setEvents]       = useState([]);
@@ -92,20 +97,27 @@ export default function AdminCalendar() {
   }, []);
 
   // ── Fetch events (real + virtual case dates) for current month ──
-  const fetchEvents = useCallback(async () => {
-    setLoading(true);
-    try {
-      const month = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
-      const res = await axios.get(`${API_BASE_URL}/events?month=${month}`, {
-        headers: authHeader(),
-      });
-      setEvents(res.data);
-    } catch {
-      toast.error("Erreur lors du chargement des événements");
-    } finally {
-      setLoading(false);
-    }
-  }, [viewYear, viewMonth]);
+  // Move today inside a useMemo so it's always the actual current day
+// Or recompute per render for long sessions:
+// const today = new Date(); // fine since component re-renders on navigation
+
+const fetchEvents = useCallback(async () => {
+  setLoading(true);
+  const controller = new AbortController();
+  try {
+    const month = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
+    const res = await axios.get(`${API_BASE_URL}/events?month=${month}`, {
+      headers: authHeader(),
+      signal: controller.signal,   // ← cancels stale requests
+    });
+    setEvents(res.data);
+  } catch (err) {
+    if (!axios.isCancel(err)) toast.error("Erreur lors du chargement des événements");
+  } finally {
+    setLoading(false);
+  }
+  return () => controller.abort(); // returned for useEffect cleanup
+}, [viewYear, viewMonth]);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
@@ -181,19 +193,30 @@ export default function AdminCalendar() {
     setShowModal(true);
   };
 
-  const openEdit = (ev) => {
-    setEditingId(ev._id);
-    setForm({
-      title:       ev.title,
-      description: ev.description || "",
-      date:        ev.date.slice(0, 16),
-      endDate:     ev.endDate ? ev.endDate.slice(0, 16) : "",
-      type:        ev.type,
-      caseRef:     ev.caseRef?._id || ev.caseRef || "",
-      color:       ev.color || "#3b82f6",
-    });
-    setShowModal(true);
-  };
+  function toDatetimeLocal(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  const y   = d.getFullYear();
+  const mo  = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h   = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day}T${h}:${min}`;
+}
+
+const openEdit = (ev) => {
+  setEditingId(ev._id);
+  setForm({
+    title:       ev.title,
+    description: ev.description || "",
+    date:        toDatetimeLocal(ev.date),       // ← local, not UTC slice
+    endDate:     toDatetimeLocal(ev.endDate),
+    type:        ev.type,
+    caseRef:     ev.caseRef?._id || ev.caseRef || "",
+    color:       ev.color || "#3b82f6",
+  });
+  setShowModal(true);
+};
 
   const deleteEvent = async (id) => {
     if (!confirm("Supprimer cet événement ?")) return;
