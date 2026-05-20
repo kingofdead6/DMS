@@ -26,7 +26,6 @@ const EVENT_TYPES = {
   autre:    { label: "Autre",     color: "bg-gray-400",   light: "bg-gray-100 text-gray-600 border-gray-200" },
 };
 
-// Virtual case event label → badge color (distinct from real events)
 const VIRTUAL_LABEL_COLOR = {
   audience: "bg-blue-400/70",
   délai:    "bg-red-400/70",
@@ -38,7 +37,7 @@ const EMPTY_EVENT = {
   type: "audience", caseRef: "", color: "#3b82f6",
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getToken() {
   return localStorage.getItem("token") || sessionStorage.getItem("token");
@@ -64,14 +63,63 @@ function toYMD(date) {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
 function sameDay(a, b) {
   return toYMD(new Date(a)) === toYMD(new Date(b));
+}
+
+// ─── FIX: Convert a datetime-local string (no timezone) to a UTC ISO string ───
+//
+// The browser's <input type="datetime-local"> always produces a string like
+// "2024-06-15T09:00" — no timezone suffix. If you pass this directly to the
+// backend, Mongoose/Node.js behaviour is ambiguous: date-only ISO strings are
+// treated as UTC, but datetime strings without a timezone are treated as the
+// SERVER's local time. On a UTC server this appears to work, but on any other
+// server (or when the user's browser offset differs from the server offset) the
+// stored time is wrong.
+//
+// The multi-argument Date constructor — new Date(year, month, day, h, m) —
+// always interprets its arguments as LOCAL time, regardless of platform or
+// Node version. Calling .toISOString() on the result always returns UTC with
+// a "Z" suffix. This is the only safe way to convert a local datetime string
+// to an unambiguous UTC ISO string.
+function localStringToUTCISO(localStr) {
+  if (!localStr) return "";
+  const [datePart, timePart] = localStr.split("T");
+  if (!datePart) return "";
+  const [year, month, day]  = datePart.split("-").map(Number);
+  const [hours = 0, minutes = 0] = (timePart || "00:00").split(":").map(Number);
+  // Multi-arg constructor → local time. toISOString() → UTC with Z.
+  return new Date(year, month - 1, day, hours, minutes).toISOString();
+}
+
+// ─── FIX: Convert a UTC ISO string back to a datetime-local string ────────────
+//
+// The server always returns dates as UTC ISO strings (e.g. "2024-06-15T08:00:00.000Z").
+// To pre-fill a datetime-local input we need the user's LOCAL time.
+// The Date getters (getFullYear, getMonth, getDate, getHours, getMinutes) all
+// return LOCAL time — this is intentional. If the user is UTC+1 and the event
+// is stored as 08:00Z, these getters return 09:00, which is the correct local
+// time to show in the form.
+function toDatetimeLocal(isoString) {
+  if (!isoString) return "";
+  const d   = new Date(isoString); // parsed as UTC because isoString ends with Z
+  const y   = d.getFullYear();
+  const mo  = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h   = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day}T${h}:${min}`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AdminCalendar() {
-  const today = useMemo(() => new Date(), []);
+  // FIX: Do NOT memoize today. A memoized value freezes at component mount —
+  // if the user leaves the tab open past midnight the "today" highlight stays
+  // on yesterday forever. A plain `new Date()` is O(1) and safe to call each
+  // render. The calendar re-renders only on user interaction, never on a timer.
+  const today = new Date();
 
   const [viewYear, setViewYear]   = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -96,30 +144,39 @@ export default function AdminCalendar() {
     }
   }, []);
 
-  // ── Fetch events (real + virtual case dates) for current month ──
-  // Move today inside a useMemo so it's always the actual current day
-// Or recompute per render for long sessions:
-// const today = new Date(); // fine since component re-renders on navigation
+  // ── FIX: Fetch events with a properly wired AbortController ──────────────────
+  //
+  // The original code created the AbortController inside a useCallback, then
+  // returned the cleanup function from fetchEvents() itself rather than from
+  // the useEffect. useEffect discards any return value from the effect function
+  // that isn't a cleanup function — the returned () => controller.abort() was
+  // simply thrown away, meaning stale in-flight requests were never cancelled.
+  //
+  // The fix: inline the fetch directly inside useEffect so the abort cleanup is
+  // returned from the effect, not from a nested function. useCallback is no
+  // longer needed because the dependency array [viewYear, viewMonth] on the
+  // effect itself already controls when it re-runs.
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
 
-const fetchEvents = useCallback(async () => {
-  setLoading(true);
-  const controller = new AbortController();
-  try {
     const month = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
-    const res = await axios.get(`${API_BASE_URL}/events?month=${month}`, {
-      headers: authHeader(),
-      signal: controller.signal,   // ← cancels stale requests
-    });
-    setEvents(res.data);
-  } catch (err) {
-    if (!axios.isCancel(err)) toast.error("Erreur lors du chargement des événements");
-  } finally {
-    setLoading(false);
-  }
-  return () => controller.abort(); // returned for useEffect cleanup
-}, [viewYear, viewMonth]);
+    axios
+      .get(`${API_BASE_URL}/events?month=${month}`, {
+        headers: authHeader(),
+        signal: controller.signal,
+      })
+      .then((res) => setEvents(res.data))
+      .catch((err) => {
+        if (!axios.isCancel(err)) toast.error("Erreur lors du chargement des événements");
+      })
+      .finally(() => setLoading(false));
 
-  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+    // This cleanup now actually runs when viewYear/viewMonth changes or the
+    // component unmounts, cancelling any in-flight request before starting a
+    // new one. Prevents stale responses from overwriting newer state.
+    return () => controller.abort();
+  }, [viewYear, viewMonth]);
 
   // ── Fetch cases for the linked-case dropdown ──
   useEffect(() => {
@@ -156,12 +213,26 @@ const fetchEvents = useCallback(async () => {
     setViewMonth(today.getMonth());
   };
 
-  // ── Submit (create / update) ──
+  // ── FIX: Submit — convert local datetime strings to UTC ISO before sending ───
+  //
+  // Previously: form.date held "2024-06-15T09:00" (no timezone) and was sent
+  // directly. Mongoose's behaviour on a timezone-less datetime string depends
+  // on the server's local timezone — on a UTC server it "works" but on a UTC+1
+  // server (Algeria) all events are stored 1 hour early.
+  //
+  // Now: localStringToUTCISO("2024-06-15T09:00") in a UTC+1 browser returns
+  // "2024-06-15T08:00:00.000Z" — the correct UTC equivalent of 09:00 local.
+  // The server always receives an unambiguous UTC string and stores it as-is.
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.title || !form.date) { toast.error("Titre et date requis"); return; }
     try {
-      const payload = { ...form, caseRef: form.caseRef || undefined };
+      const payload = {
+        ...form,
+        date:    localStringToUTCISO(form.date),
+        endDate: form.endDate ? localStringToUTCISO(form.endDate) : undefined,
+        caseRef: form.caseRef || undefined,
+      };
       if (editingId) {
         const res = await axios.put(
           `${API_BASE_URL}/events/${editingId}`,
@@ -193,30 +264,25 @@ const fetchEvents = useCallback(async () => {
     setShowModal(true);
   };
 
-  function toDatetimeLocal(isoString) {
-  if (!isoString) return "";
-  const d = new Date(isoString);
-  const y   = d.getFullYear();
-  const mo  = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h   = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${mo}-${day}T${h}:${min}`;
-}
-
-const openEdit = (ev) => {
-  setEditingId(ev._id);
-  setForm({
-    title:       ev.title,
-    description: ev.description || "",
-    date:        toDatetimeLocal(ev.date),       // ← local, not UTC slice
-    endDate:     toDatetimeLocal(ev.endDate),
-    type:        ev.type,
-    caseRef:     ev.caseRef?._id || ev.caseRef || "",
-    color:       ev.color || "#3b82f6",
-  });
-  setShowModal(true);
-};
+  // ── FIX: openEdit — pre-fill form with local time ────────────────────────────
+  //
+  // toDatetimeLocal() converts the UTC ISO string from the server back to the
+  // user's local time using the local Date getters (getHours, getMinutes, etc.).
+  // This is the correct inverse of localStringToUTCISO used in handleSubmit,
+  // so the round-trip is: local input → UTC storage → local display in form.
+  const openEdit = (ev) => {
+    setEditingId(ev._id);
+    setForm({
+      title:       ev.title,
+      description: ev.description || "",
+      date:        toDatetimeLocal(ev.date),
+      endDate:     toDatetimeLocal(ev.endDate),
+      type:        ev.type,
+      caseRef:     ev.caseRef?._id || ev.caseRef || "",
+      color:       ev.color || "#3b82f6",
+    });
+    setShowModal(true);
+  };
 
   const deleteEvent = async (id) => {
     if (!confirm("Supprimer cet événement ?")) return;
@@ -232,12 +298,14 @@ const openEdit = (ev) => {
     }
   };
 
+  // FIX: formatTime uses toLocaleTimeString which correctly converts the UTC
+  // ISO string to the browser's local timezone for display. This is intentional
+  // and correct — no changes needed here.
   const formatTime = (d) =>
     new Date(d).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
   const todayEvents = events.filter((ev) => sameDay(ev.date, today));
 
-  // Counts for the legend
   const realCount    = events.filter(ev => !ev.isVirtual).length;
   const virtualCount = events.filter(ev => ev.isVirtual).length;
 
@@ -275,7 +343,6 @@ const openEdit = (ev) => {
             </button>
           </div>
 
-          {/* Legend + add button */}
           <div className="flex items-center gap-4">
             <div className="hidden sm:flex items-center gap-3 text-xs text-gray-400">
               <span className="flex items-center gap-1.5">
@@ -301,7 +368,6 @@ const openEdit = (ev) => {
 
         {/* ── Calendar Grid ── */}
         <div className="flex-1">
-          {/* Day headers */}
           <div className="grid grid-cols-7 mb-2">
             {DAYS_FR.map((d) => (
               <div
@@ -313,7 +379,6 @@ const openEdit = (ev) => {
             ))}
           </div>
 
-          {/* Day cells */}
           <div className="grid grid-cols-7 gap-1">
             {cells.map((cell, i) => {
               if (!cell) return (
@@ -338,12 +403,10 @@ const openEdit = (ev) => {
                     ${isPast && !isToday ? "opacity-60" : ""}
                   `}
                 >
-                  {/* Folder dot — indicates virtual case dates on this day */}
                   {hasVirtual && !isSelected && (
                     <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
                   )}
 
-                  {/* Day number */}
                   <div className={`
                     text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full mb-1
                     ${isToday && !isSelected ? "bg-gray-900 text-white" : ""}
@@ -352,7 +415,6 @@ const openEdit = (ev) => {
                     {dayNum}
                   </div>
 
-                  {/* Event pills */}
                   <div className="space-y-0.5">
                     {dayEvents.slice(0, 3).map((ev) => (
                       <div
@@ -384,7 +446,6 @@ const openEdit = (ev) => {
             })}
           </div>
 
-          {/* Legend strip */}
           <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-gray-400 px-1">
             {Object.entries(EVENT_TYPES).map(([k, v]) => (
               <span key={k} className="flex items-center gap-1.5">
@@ -489,7 +550,7 @@ const openEdit = (ev) => {
             )}
           </AnimatePresence>
 
-          {/* Upcoming events (real + virtual) */}
+          {/* Upcoming events */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
             <h3 className="text-sm font-semibold text-gray-900 mb-4">À venir ce mois</h3>
             {events
@@ -665,13 +726,15 @@ const openEdit = (ev) => {
 // ─── Sub-component: EventRow ──────────────────────────────────────────────────
 
 function EventRow({ ev, onEdit, onDelete, userType }) {
-  const type      = EVENT_TYPES[ev.type] || EVENT_TYPES.autre;
+  const type = EVENT_TYPES[ev.type] || EVENT_TYPES.autre;
+
+  // formatTime: toLocaleTimeString correctly converts UTC ISO → browser local time.
+  // e.g. "2024-06-15T08:00:00.000Z" in a UTC+1 browser displays as "09:00". Correct.
   const formatTime = (d) =>
     new Date(d).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className={`flex items-start gap-3 group rounded-xl px-2 py-1.5 transition-colors ${ev.isVirtual ? "bg-amber-50/50" : "hover:bg-gray-50"}`}>
-      {/* Colour dot */}
       <div className={`
         w-2 h-2 rounded-full mt-1.5 shrink-0
         ${ev.isVirtual ? "bg-amber-400" : type.color}
@@ -700,7 +763,6 @@ function EventRow({ ev, onEdit, onDelete, userType }) {
         )}
       </div>
 
-      {/* Actions — virtual events are read-only */}
       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
         {!ev.isVirtual && (
           <button
