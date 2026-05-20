@@ -246,5 +246,5 @@ export function startReminderScheduler() {
   // First tick after 30 minutes — don't run immediately on server start
   // (DB may not be ready, and you don't want to flood on redeploy)
   setTimeout(tick, INTERVAL_MS);
-  console.log('[Reminder] Scheduler armed — first check in 30 minutes');
+  console.log('[Reminder] Scheduler armed — first check in 1 minutes');
 }
