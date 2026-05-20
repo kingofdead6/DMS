@@ -230,7 +230,7 @@ export async function checkAndSendReminders() {
 }
 
 export function startReminderScheduler() {
-  const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+  const INTERVAL_MS = 1 * 60 * 1000; // 30 minutes
 
   async function tick() {
     console.log('[Reminder] Tick —', new Date().toISOString());
