@@ -1,13 +1,13 @@
-// emailReminders.js
-import cron from 'node-cron';
 import { Resend } from 'resend';
 import CalendarEvent from '../Models/CalendarEvent.js';
 import User from '../Models/User.js';
 
-const resend = new Resend('re_C14fFRKS_P2DXMBjkE7WSRsPKs9NDYiNW');
+// Key comes from env — never hardcode credentials
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function getSuperAdminEmail() {
-  const superAdmin = await User.findOne({ usertype: 'superadmin' }).select('email').lean();
+  const superAdmin = await User.findOne({ usertype: 'superadmin' })
+    .select('email').lean();
   if (!superAdmin) throw new Error('No superadmin account found in database');
   return superAdmin.email;
 }
@@ -185,8 +185,8 @@ async function sendReminderEmail(event, hoursLeft, superAdminEmail) {
     html,
   });
 }
+
 export async function checkAndSendReminders() {
-  // Fetch superadmin email once per cron tick
   let superAdminEmail;
   try {
     superAdminEmail = await getSuperAdminEmail();
@@ -201,18 +201,27 @@ export async function checkAndSendReminders() {
     const windowEnd   = new Date(now.getTime() + hoursLeft * 60 * 60 * 1000);
     const windowStart = new Date(windowEnd.getTime() - 30 * 60 * 1000);
 
-    const events = await CalendarEvent.find({
-      date: { $gte: windowStart, $lte: windowEnd },
-      [`reminder${hoursLeft}hSent`]: { $ne: true },
-    }).populate('caseRef', 'caseName clientFullName').lean();
+    let events;
+    try {
+      events = await CalendarEvent.find({
+        date: { $gte: windowStart, $lte: windowEnd },
+        [`reminder${hoursLeft}hSent`]: { $ne: true },
+      }).populate('caseRef', 'caseName clientFullName').lean();
+    } catch (err) {
+      // DB not ready yet — don't crash the loop, retry next tick
+      console.error(`[Reminder] DB query failed for ${hoursLeft}h window:`, err.message);
+      continue;
+    }
 
     for (const event of events) {
       try {
         await sendReminderEmail(event, hoursLeft, superAdminEmail);
-        await CalendarEvent.findByIdAndUpdate(event._id, {
-          [`reminder${hoursLeft}hSent`]: true,
-        });
-        console.log(`[Reminder] ${hoursLeft}h email sent to ${superAdminEmail} for: ${event.title}`);
+        // Use updateOne instead of findByIdAndUpdate to avoid a second round-trip
+        await CalendarEvent.updateOne(
+          { _id: event._id },
+          { $set: { [`reminder${hoursLeft}hSent`]: true } }
+        );
+        console.log(`[Reminder] ${hoursLeft}h sent for: "${event.title}"`);
       } catch (err) {
         console.error(`[Reminder] Failed for "${event.title}":`, err.message);
       }
@@ -221,10 +230,21 @@ export async function checkAndSendReminders() {
 }
 
 export function startReminderScheduler() {
-  console.log('[Reminder] Scheduler started — checks every 30 minutes');
-  cron.schedule('*/30 * * * *', () => {
-    checkAndSendReminders().catch(err =>
-      console.error('[Reminder] Scheduler error:', err.message)
-    );
-  });
+  const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+  async function tick() {
+    console.log('[Reminder] Tick —', new Date().toISOString());
+    try {
+      await checkAndSendReminders();
+    } catch (err) {
+      console.error('[Reminder] Tick error:', err.message);
+    }
+    // Schedule next tick regardless of whether this one succeeded
+    setTimeout(tick, INTERVAL_MS);
+  }
+
+  // First tick after 30 minutes — don't run immediately on server start
+  // (DB may not be ready, and you don't want to flood on redeploy)
+  setTimeout(tick, INTERVAL_MS);
+  console.log('[Reminder] Scheduler armed — first check in 30 minutes');
 }

@@ -19,10 +19,14 @@ app.use(express.urlencoded({ extended: true }));
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch((err) => console.log(err));
-
-startReminderScheduler();
+  .then(() => {
+    console.log('MongoDB connected');
+    startReminderScheduler(); // ← inside .then(), guaranteed DB is up
+  })
+  .catch((err) => {
+    console.error('MongoDB connection failed:', err);
+    process.exit(1); // fail fast — don't run a broken server
+  });
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cases', caseRoutes);
