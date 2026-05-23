@@ -72,7 +72,7 @@ if (decoded.usertype === "admin" || decoded.usertype === "superadmin") {
         <Route path="*" element={<NotFound />} />
 
       </Routes>
-          <Footer />
+          {/* <Footer /> */}
     </Router>
   );
 }
