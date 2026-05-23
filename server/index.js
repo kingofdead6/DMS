@@ -21,19 +21,31 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected');
-    startReminderScheduler(); // ← inside .then(), guaranteed DB is up
+    startReminderScheduler();
   })
   .catch((err) => {
     console.error('MongoDB connection failed:', err);
-    process.exit(1); // fail fast — don't run a broken server
+    process.exit(1);
   });
 
-app.use('/api/auth', authRoutes);
-app.use('/api/cases', caseRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/logs', logRoutes);
+// Router with /realbackenddms prefix
+const router = express.Router();
 
-app.use(errorHandler);
+router.get('/', (req, res) => {
+  res.send('Backend Works');
+});
+
+router.get('/test', (req, res) => {
+  res.send('Test OK');
+});
+
+router.use('/api/auth', authRoutes);
+router.use('/api/cases', caseRoutes);
+router.use('/api/events', eventRoutes);
+router.use('/api/logs', logRoutes);
+router.use(errorHandler);
+
+app.use('/realbackenddms', router);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
